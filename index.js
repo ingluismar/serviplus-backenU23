@@ -19,6 +19,7 @@ app.listen(port, () => {
 app.get('/', (req, res) => {
     res.send("API iniciado ");
 });
+
 app.use("/clientes", require("./rutas/ClienteRutas"));
 app.use("/tickets", require("./rutas/TicketRutas"));
 app.use("/login", require("./rutas/LoginRutas"));

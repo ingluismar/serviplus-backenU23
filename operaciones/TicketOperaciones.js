@@ -17,17 +17,20 @@ ticketOperaciones.buscarTickets = async (req, res) => {
     try {
         const filtro = req.query;
         let listatickets;
+
         if (filtro.q != null) {
             listatickets = await ticketModelo.find({
                 "$or": [
                     { "asunto": { $regex: filtro.q, $options: "i" } },
-                    { "solicitud": { $regex: filtro.q, $options: "i" } }
+                    { "solicitud": { $regex: filtro.q, $options: "i" } },
+                    { "estadotk": { $regex: filtro.q, $options: "i" } }
+                    
                 ]
             });
-        }
-        else {
+        } else {
             listatickets = await ticketModelo.find(filtro);
         }
+
         if (listatickets.length > 0) {
             res.status(200).send(listatickets);
         } else {
