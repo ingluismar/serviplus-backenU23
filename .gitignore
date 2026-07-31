@@ -102,3 +102,7 @@ dist
 
 # TernJS port file
 .tern-port
+
+# Archivos adjuntos subidos por los usuarios (no versionar contenido, solo la carpeta)
+uploads/tickets/*
+!uploads/tickets/.gitkeep
