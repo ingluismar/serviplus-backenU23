@@ -8,7 +8,43 @@ const cifrarPassword = async (password) => {
     return await bcrypt.hash(password, salt);
 }
 
+const ETIQUETAS_CAMPO = {
+    nombres: "nombres",
+    apellidos: "apellidos",
+    documento: "documento",
+    telefono: "teléfono",
+    correo: "correo",
+    usuario: "usuario",
+    password: "contraseña",
+    es_admin: "rol de usuario"
+};
 
+// Traduce los errores técnicos de Mongo/Mongoose a un mensaje claro para el usuario
+const traducirErrorCliente = (error) => {
+    if (error.code === 11000) {
+        const campo = Object.keys(error.keyPattern || {})[0];
+        const etiqueta = ETIQUETAS_CAMPO[campo] || campo;
+        return `Ya existe un cliente registrado con ese ${etiqueta}. Verifica el dato e intenta de nuevo.`;
+    }
+
+    if (error.name === "ValidationError") {
+        const primerError = Object.values(error.errors)[0];
+        const etiqueta = ETIQUETAS_CAMPO[primerError.path] || primerError.path;
+
+        if (primerError.kind === "maxlength") {
+            return `El campo "${etiqueta}" no puede tener más de ${primerError.properties.maxlength} caracteres. Verifica el dato e intenta de nuevo.`;
+        }
+        if (primerError.kind === "required") {
+            return `El campo "${etiqueta}" es obligatorio.`;
+        }
+        if (primerError.kind === "Boolean") {
+            return `El campo "${etiqueta}" tiene un valor inválido. Selecciona una opción válida.`;
+        }
+        return primerError.message;
+    }
+
+    return "Ocurrió un error al guardar el cliente. Verifica los datos e intenta de nuevo.";
+}
 
 clienteOperaciones.crearCliente = async (req, res) => {
     try {
@@ -18,7 +54,7 @@ clienteOperaciones.crearCliente = async (req, res) => {
         const clienteGuardado = await cliente.save();
         res.status(201).send(clienteGuardado);
     } catch (error) {
-        res.status(400).json(error);
+        res.status(400).send(traducirErrorCliente(error));
     }
 }
 
@@ -68,9 +104,6 @@ clienteOperaciones.modificarCliente = async (req, res) => {
     try {
         const id = req.params.id;
         const body = req.body;
-        if (body.passw != null) {
-            body.password = await cifrarPassword(body.password);
-        }
         const datosActualizar = {
             nombres: body.nombres,
             apellidos: body.apellidos,
@@ -78,8 +111,13 @@ clienteOperaciones.modificarCliente = async (req, res) => {
             telefono: body.telefono,
             correo: body.correo,
             usuario: body.usuario,
-            password: body.password,
             es_admin: body.es_admin
+        }
+
+        // Solo se actualiza y re-encripta la contraseña si se envió una nueva;
+        // si no, se conserva la que ya tenía el cliente
+        if (body.password) {
+            datosActualizar.password = await cifrarPassword(body.password);
         }
         const clienteActualizado = await clienteModelo.findByIdAndUpdate(id, datosActualizar, { new: true });
         if (clienteActualizado != null) {
@@ -89,11 +127,9 @@ clienteOperaciones.modificarCliente = async (req, res) => {
             res.status(404).send("No hay datos");
         }
     } catch (error) {
-        res.status(400).send("Mala petición. " + error);
+        res.status(400).send(traducirErrorCliente(error));
     }
 }
-
-
 
 
 clienteOperaciones.borrarCliente = async (req, res) => {
