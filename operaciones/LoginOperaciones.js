@@ -29,7 +29,9 @@ LoginOperaciones.login = async(req, res) => {
             const result = await compararPassword(password, user.password);
             if (result) {
                 const acceso = {
+                    id: user._id,
                     nombres: user.nombres+" "+user.apellidos,
+                    correo: user.correo,
                     es_admin: user.es_admin,
                     //token: generarToken(usuario.id, usuario.nombres+" "+usuario.apellidos, usuario.es_admin)
                 }

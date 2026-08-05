@@ -4,6 +4,7 @@ const mongoose = require("mongoose");
 const TicketSchema = mongoose.Schema({
 
     numeracionTicket: { type: String, required: true, unique: true },
+    cliente: { type: mongoose.Schema.Types.ObjectId, ref: "clientes", required: false },
     fecha:  { type: Date, default: Date.now, required: false, unique: false },
     asunto: { type: String, maxLength: 150, required: true, unique: false },
     solicitud: { type: String, maxLength: 400, required: true, unique: false },

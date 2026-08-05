@@ -23,4 +23,17 @@ correoServicio.enviarCorreoRecuperacion = async (correoDestino, enlace) => {
     });
 };
 
+correoServicio.enviarCorreoTicketCreado = async (correoDestino, numeracionTicket, tiempoEstimadoTexto) => {
+    await transportador.sendMail({
+        from: `Serviplus <${process.env.EMAIL_USER}>`,
+        to: correoDestino,
+        subject: `Ticket ${numeracionTicket} creado - Serviplus`,
+        html: `
+            <p>Hemos recibido tu solicitud y se generó el ticket <strong>${numeracionTicket}</strong>.</p>
+            <p>Será gestionado en un tiempo estimado de <strong>${tiempoEstimadoTexto}</strong>, de acuerdo con los tiempos de servicio establecidos para cada etapa (pendiente, en proceso, solucionado).</p>
+            <p>Puedes hacer seguimiento a tu ticket ingresando a la plataforma de Serviplus.</p>
+        `
+    });
+};
+
 module.exports = correoServicio;

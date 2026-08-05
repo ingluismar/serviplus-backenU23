@@ -2,6 +2,8 @@ const path = require("path");
 const fs = require("fs");
 const ticketModelo = require("../modelos/TicketModelo");
 const ansModelo = require("../modelos/AnsModelo");
+const clienteModelo = require("../modelos/ClienteModelo");
+const correoServicio = require("../servicios/correoServicio");
 const ticketOperaciones = {}
 
 const CARPETA_ADJUNTOS = path.join(__dirname, "..", "uploads", "tickets");
@@ -47,6 +49,48 @@ const adjuntarEstadoAns = async (tickets) => {
     return Array.isArray(tickets) ? resultado : resultado[0];
 };
 
+// Suma los tiempos (en horas) configurados para cada estado del ANS, es decir,
+// el tiempo total estimado para gestionar un ticket de principio a fin
+const calcularTiempoTotalAns = (ansConfig) => {
+    if (!ansConfig) return null;
+    return (ansConfig.pendiente || 0) + (ansConfig.proceso || 0) + (ansConfig.solucionado || 0);
+};
+
+// Da un formato legible en español a un total de horas (ej. "1 día y 4 horas")
+const formatearTiempoEstimado = (horas) => {
+    if (horas == null) return "el tiempo estimado según nuestros acuerdos de servicio";
+
+    const dias = Math.floor(horas / 24);
+    const horasRestantes = horas % 24;
+
+    if (dias === 0) return `${horasRestantes} hora${horasRestantes === 1 ? "" : "s"}`;
+    if (horasRestantes === 0) return `${dias} día${dias === 1 ? "" : "s"}`;
+    return `${dias} día${dias === 1 ? "" : "s"} y ${horasRestantes} hora${horasRestantes === 1 ? "" : "s"}`;
+};
+
+// Envía el correo de notificación de ticket creado al cliente asociado.
+// Se ejecuta sin bloquear la respuesta HTTP y aísla sus propios errores
+// para que un fallo en el envío nunca afecte la creación del ticket.
+const enviarNotificacionTicketCreado = async (ticket) => {
+    try {
+        if (!ticket.cliente) return;
+
+        const cliente = await clienteModelo.findById(ticket.cliente);
+        if (!cliente || !cliente.correo) return;
+
+        const ansConfig = await ansModelo.findOne();
+        const tiempoTotal = calcularTiempoTotalAns(ansConfig);
+
+        await correoServicio.enviarCorreoTicketCreado(
+            cliente.correo,
+            ticket.numeracionTicket,
+            formatearTiempoEstimado(tiempoTotal)
+        );
+    } catch (errorCorreo) {
+        console.log("Error al enviar correo de creación de ticket:", errorCorreo);
+    }
+};
+
 ticketOperaciones.crearTicket = async (req, res) => {
     try {
         const nuevoTicketData = req.body;
@@ -85,6 +129,8 @@ ticketOperaciones.crearTicket = async (req, res) => {
 
         res.status(201).send(await adjuntarEstadoAns(ticketGuardado));
 
+        // Notifica al cliente por correo (no se espera su resultado para no retrasar la respuesta)
+        enviarNotificacionTicketCreado(ticketGuardado);
 
     } catch (error) {
        
