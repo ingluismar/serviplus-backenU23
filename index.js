@@ -26,3 +26,4 @@ app.use("/tickets", require("./rutas/TicketRutas"));
 app.use("/login", require("./rutas/LoginRutas"));
 app.use("/agentes", require("./rutas/AgenteRutas"));
 app.use("/ans", require("./rutas/AnsRutas"));
+app.use("/niveles-servicio", require("./rutas/NivelServicioRutas"));

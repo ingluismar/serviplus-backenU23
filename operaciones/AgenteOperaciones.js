@@ -1,4 +1,5 @@
 const agenteModelo = require("../modelos/AgentesModelo");
+const nivelServicioModelo = require("../modelos/NivelServicioModelo");
 const agenteOperaciones = {}
 
 const ETIQUETAS_CAMPO = {
@@ -35,9 +36,28 @@ const traducirErrorAgente = (error) => {
     return "Ocurrió un error al guardar el agente. Verifica los datos e intenta de nuevo.";
 }
 
+// Valida que el rol enviado corresponda a un nivel de servicio configurado y
+// activo. El desplegable de "rol" en el formulario de agente se llena con
+// los niveles de servicio (GET /niveles-servicio?activo=true), así que aquí
+// se rechaza cualquier valor que no venga de ese catálogo.
+const validarRolAgente = async (rol) => {
+    if (!rol) {
+        return `El campo "rol" es obligatorio.`;
+    }
+    const nivel = await nivelServicioModelo.findOne({ nombre: rol, activo: true });
+    if (nivel == null) {
+        return `El rol "${rol}" no corresponde a un nivel de servicio configurado. Configura primero el nivel de servicio o selecciona uno existente.`;
+    }
+    return null;
+}
+
 agenteOperaciones.crearAgente = async (req, res) => {
     try {
         const body = req.body;
+        const errorRol = await validarRolAgente(body.rol);
+        if (errorRol != null) {
+            return res.status(400).send(errorRol);
+        }
         const agente = new agenteModelo(body);
         const agenteGuardado = await agente.save();
         res.status(201).send(agenteGuardado);
@@ -92,7 +112,12 @@ agenteOperaciones.modificarAgente = async (req, res) => {
     try {
         const id = req.params.id;
         const body = req.body;
-        
+
+        const errorRol = await validarRolAgente(body.rol);
+        if (errorRol != null) {
+            return res.status(400).send(errorRol);
+        }
+
         const datosActualizar = {
             nombres: body.nombres,
             apellidos: body.apellidos,

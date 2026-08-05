@@ -106,3 +106,9 @@ dist
 # Archivos adjuntos subidos por los usuarios (no versionar contenido, solo la carpeta)
 uploads/tickets/*
 !uploads/tickets/.gitkeep
+
+# Copia anidada duplicada y desactualizada (resto de una extraccion de zip), no se versiona
+/serviplus-backenU23-main/
+
+# Configuracion local de Claude Code (especifica de esta maquina/sesion)
+.claude/
