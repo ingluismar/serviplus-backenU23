@@ -44,9 +44,74 @@ const adjuntarEstadoAns = async (tickets) => {
     const lista = Array.isArray(tickets) ? tickets : [tickets];
     const resultado = lista.map((ticket) => {
         const plano = ticket.toObject();
-        return { ...plano, ...calcularEstadoAns(ticket, ansConfig) };
+        return { ...plano, ...calcularEstadoAns(ticket, ansConfig), ...calcularTiemposEnVivo(ticket) };
     });
     return Array.isArray(tickets) ? resultado : resultado[0];
+};
+
+// Relaciona cada estado "abierto" del ticket con la clave del acumulador de tiempos.
+// "Solucionado" es terminal: no tiene tramo propio que siga corriendo.
+const CLAVE_TIEMPO_POR_ESTADO = {
+    "Pendiente": "pendiente",
+    "En proceso": "proceso",
+    "Suspendido": "suspendido"
+};
+
+// Reglas de transición para el nuevo estado Suspendido: solo se puede suspender
+// un ticket que esté "En proceso", y desde Suspendido solo se puede reanudar
+// (volver a "En proceso"); no se permite saltar directo a Solucionado.
+const esTransicionValida = (estadoAnterior, estadoNuevo) => {
+    if (estadoNuevo === "Suspendido") return estadoAnterior === "En proceso";
+    if (estadoAnterior === "Suspendido") return estadoNuevo === "En proceso";
+    return true;
+};
+
+// Cuando el ticket cambia de estado, cierra el tramo del estado saliente:
+// calcula cuántos minutos reales duró y los suma al acumulador correspondiente.
+// Devuelve los campos a persistir, o null si el estado no cambió.
+const calcularTransicionEstado = (ticketActual, estadoNuevo, ahora) => {
+    const estadoAnterior = ticketActual.estadotk;
+    if (!estadoNuevo || estadoNuevo === estadoAnterior) {
+        return null;
+    }
+
+    // Punto de partida del tramo que se cierra: estadoDesde si existe, o la fecha
+    // de creación para tickets antiguos que todavía no tienen ese campo.
+    const inicioTramo = ticketActual.estadoDesde || ticketActual.fecha || ahora;
+    const claveAnterior = CLAVE_TIEMPO_POR_ESTADO[estadoAnterior];
+
+    const tiempos = {
+        pendiente: ticketActual.tiempos?.pendiente || 0,
+        proceso: ticketActual.tiempos?.proceso || 0,
+        suspendido: ticketActual.tiempos?.suspendido || 0
+    };
+
+    if (claveAnterior) {
+        const minutosTramo = Math.max(0, Math.round((ahora - new Date(inicioTramo)) / 60000));
+        tiempos[claveAnterior] += minutosTramo;
+    }
+
+    return { estadoDesde: ahora, tiempos };
+};
+
+// Suma los minutos ya acumulados más el tramo del estado actual en curso (si el
+// ticket sigue abierto) para tener el tiempo real hasta este instante.
+// El tiempo total de atención excluye el tiempo suspendido (es una pausa, no
+// tiempo de trabajo) y deja de crecer solo una vez el ticket queda Solucionado.
+const calcularTiemposEnVivo = (ticket) => {
+    const tiempos = {
+        pendiente: ticket.tiempos?.pendiente || 0,
+        proceso: ticket.tiempos?.proceso || 0,
+        suspendido: ticket.tiempos?.suspendido || 0
+    };
+
+    const claveActual = CLAVE_TIEMPO_POR_ESTADO[ticket.estadotk];
+    const inicioTramo = ticket.estadoDesde || ticket.fecha;
+    if (claveActual && inicioTramo) {
+        tiempos[claveActual] += Math.max(0, Math.round((new Date() - new Date(inicioTramo)) / 60000));
+    }
+
+    return { tiempos, tiempoTotalAtencion: tiempos.pendiente + tiempos.proceso };
 };
 
 // Suma los tiempos (en horas) configurados para cada estado del ANS, es decir,
@@ -111,6 +176,9 @@ ticketOperaciones.crearTicket = async (req, res) => {
         // Asegurarse de que el campo numeracionTicket esté presente en nuevoTicketData
         nuevoTicketData.numeracionTicket = numeracionTicket;
 
+        // El cronómetro del estado inicial (Pendiente) arranca en el momento de creación
+        nuevoTicketData.estadoDesde = nuevoTicketData.estadoDesde || new Date();
+
         // Si se subió un archivo, guardar solo la referencia (el binario ya quedó en /uploads/tickets)
         if (req.file) {
             nuevoTicketData.adjunto = {
@@ -149,7 +217,9 @@ ticketOperaciones.buscarTickets = async (req, res) => {
                     { "numeracionTicket": { $regex: filtro.q, $options: "i" } },
                     { "asunto": { $regex: filtro.q, $options: "i" } },
                     { "solicitud": { $regex: filtro.q, $options: "i" } },
-                    { "estadotk": { $regex: filtro.q, $options: "i" } }
+                    { "estadotk": { $regex: filtro.q, $options: "i" } },
+                    { "tipo": { $regex: filtro.q, $options: "i" } },
+                    { "categoria": { $regex: filtro.q, $options: "i" } }
 
                 ]
             });
@@ -207,6 +277,16 @@ ticketOperaciones.modificarTicket = async (req, res) => {
     try {
         const id = req.params.id;
         const body = req.body;
+
+        const ticketActual = await ticketModelo.findById(id);
+        if (ticketActual == null) {
+            return res.status(404).send("No hay datos");
+        }
+
+        if (body.estadotk && body.estadotk !== ticketActual.estadotk && !esTransicionValida(ticketActual.estadotk, body.estadotk)) {
+            return res.status(400).send(`No se puede pasar de "${ticketActual.estadotk}" a "${body.estadotk}" directamente.`);
+        }
+
         const datosActualizar = {
 
             asunto: body.asunto,
@@ -214,7 +294,16 @@ ticketOperaciones.modificarTicket = async (req, res) => {
             agente: body.agente,
             estadotk: body.estadotk,
             cierre: body.cierre,
-            fechaCierre: body.fechaCierre
+            fechaCierre: body.fechaCierre,
+            motivoSuspension: body.motivoSuspension,
+            impacto: body.impacto
+        }
+
+        // Si el estado cambia, cierra el tramo del estado saliente y acumula sus minutos
+        const transicion = calcularTransicionEstado(ticketActual, body.estadotk, new Date());
+        if (transicion) {
+            datosActualizar.estadoDesde = transicion.estadoDesde;
+            datosActualizar.tiempos = transicion.tiempos;
         }
 
         // Si se subió un archivo nuevo, reemplaza la referencia del adjunto
