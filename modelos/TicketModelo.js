@@ -7,11 +7,40 @@ const TicketSchema = mongoose.Schema({
     cliente: { type: mongoose.Schema.Types.ObjectId, ref: "clientes", required: false },
     fecha:  { type: Date, default: Date.now, required: false, unique: false },
     asunto: { type: String, maxLength: 150, required: true, unique: false },
+    // Clasificación ITIL: el cliente elige entre reportar una falla (Incidente)
+    // o pedir algo nuevo (Requerimiento/Service Request).
+    tipo: { type: String, enum: ["Incidente", "Requerimiento"], required: true },
+    // Tipificación concreta bajo el tipo elegido. Se presenta al cliente en
+    // lenguaje amigable (con ejemplos) pero se guarda como concepto concreto.
+    categoria: {
+        type: String,
+        enum: [
+            "Hardware", "Software", "Redes e Internet",
+            "Accesos y permisos", "Instalación y configuración", "Equipo y suministros", "Información y otros"
+        ],
+        required: true
+    },
     solicitud: { type: String, maxLength: 400, required: true, unique: false },
     agente: { type: String, maxLength: 50, required: false, unique: false },
     estadotk: { type: String, maxLength: 50, required: false, unique: false },
     cierre: { type: String, maxLength: 400, required: false, unique: false },
     fechaCierre:  { type: Date, required: false, unique: false },
+    motivoSuspension: { type: String, maxLength: 400, required: false, unique: false },
+    // Nivel de impacto ITIL: qué tan grave es el efecto del incidente sobre el
+    // negocio (alcance de usuarios/servicios afectados). Lo define el
+    // dispatcher/agente al triar el caso, es independiente del ANS (urgencia).
+    impacto: { type: String, enum: ["Alto", "Medio", "Bajo"], required: false, unique: false },
+    // Marca desde cuándo el ticket está en el estado actual (estadotk).
+    // Se usa para calcular, al momento del próximo cambio de estado, cuántos
+    // minutos reales acumula ese estado.
+    estadoDesde: { type: Date, required: false, unique: false },
+    // Minutos acumulados y "congelados" en cada estado por el que ya pasó el ticket.
+    // No incluye el tramo del estado actual, que sigue corriendo (se calcula al vuelo).
+    tiempos: {
+        pendiente: { type: Number, default: 0, min: 0 },
+        proceso: { type: Number, default: 0, min: 0 },
+        suspendido: { type: Number, default: 0, min: 0 }
+    },
     adjunto: {
         nombreOriginal: { type: String, required: false },
         nombreArchivo: { type: String, required: false },
