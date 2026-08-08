@@ -1,15 +1,25 @@
 const agenteModelo = require("../modelos/AgentesModelo");
 const nivelServicioModelo = require("../modelos/NivelServicioModelo");
+const bcrypt = require("bcrypt");
 const agenteOperaciones = {}
+
+const SALT_TIMES = 10;
+
+const cifrarPassword = async (password) => {
+    const salt = await bcrypt.genSalt(SALT_TIMES);
+    return await bcrypt.hash(password, salt);
+}
 
 const ETIQUETAS_CAMPO = {
     nombres: "nombres",
     apellidos: "apellidos",
     documento: "documento",
-    rol: "rol",
+    nivelServicio: "nivel de servicio",
     telefono: "teléfono",
     correo: "correo",
-    usuario: "usuario"
+    usuario: "usuario",
+    password: "contraseña",
+    rol: "rol"
 };
 
 // Traduce los errores técnicos de Mongo/Mongoose a un mensaje claro para el usuario
@@ -36,17 +46,17 @@ const traducirErrorAgente = (error) => {
     return "Ocurrió un error al guardar el agente. Verifica los datos e intenta de nuevo.";
 }
 
-// Valida que el rol enviado corresponda a un nivel de servicio configurado y
-// activo. El desplegable de "rol" en el formulario de agente se llena con
-// los niveles de servicio (GET /niveles-servicio?activo=true), así que aquí
-// se rechaza cualquier valor que no venga de ese catálogo.
-const validarRolAgente = async (rol) => {
-    if (!rol) {
-        return `El campo "rol" es obligatorio.`;
+// Valida que el nivel de servicio enviado corresponda a uno configurado y
+// activo. El desplegable de "nivel de servicio" en el formulario de agente
+// se llena con ese catálogo (GET /niveles-servicio?activo=true), así que
+// aquí se rechaza cualquier valor que no venga de ahí.
+const validarNivelServicioAgente = async (nivelServicio) => {
+    if (!nivelServicio) {
+        return `El campo "nivel de servicio" es obligatorio.`;
     }
-    const nivel = await nivelServicioModelo.findOne({ nombre: rol, activo: true });
+    const nivel = await nivelServicioModelo.findOne({ nombre: nivelServicio, activo: true });
     if (nivel == null) {
-        return `El rol "${rol}" no corresponde a un nivel de servicio configurado. Configura primero el nivel de servicio o selecciona uno existente.`;
+        return `El nivel de servicio "${nivelServicio}" no corresponde a uno configurado. Configúralo primero o selecciona uno existente.`;
     }
     return null;
 }
@@ -54,9 +64,12 @@ const validarRolAgente = async (rol) => {
 agenteOperaciones.crearAgente = async (req, res) => {
     try {
         const body = req.body;
-        const errorRol = await validarRolAgente(body.rol);
-        if (errorRol != null) {
-            return res.status(400).send(errorRol);
+        const errorNivel = await validarNivelServicioAgente(body.nivelServicio);
+        if (errorNivel != null) {
+            return res.status(400).send(errorNivel);
+        }
+        if (body.password) {
+            body.password = await cifrarPassword(body.password);
         }
         const agente = new agenteModelo(body);
         const agenteGuardado = await agente.save();
@@ -76,7 +89,8 @@ agenteOperaciones.buscarAgentes = async (req, res) => {
                     { "nombres": { $regex: query.q, $options: "i"}},
                     { "apellidos": { $regex: query.q, $options: "i"}},
                     { "documento": { $regex: query.q, $options: "i"}},
-                    { "usuario": { $regex: query.q, $options: "i"}}
+                    { "usuario": { $regex: query.q, $options: "i"}},
+                    { "correo": { $regex: query.q, $options: "i"}}
                 ]
             });
         }
@@ -113,20 +127,29 @@ agenteOperaciones.modificarAgente = async (req, res) => {
         const id = req.params.id;
         const body = req.body;
 
-        const errorRol = await validarRolAgente(body.rol);
-        if (errorRol != null) {
-            return res.status(400).send(errorRol);
+        const errorNivel = await validarNivelServicioAgente(body.nivelServicio);
+        if (errorNivel != null) {
+            return res.status(400).send(errorNivel);
         }
 
         const datosActualizar = {
             nombres: body.nombres,
             apellidos: body.apellidos,
             documento: body.documento,
-            rol: body.rol,
+            nivelServicio: body.nivelServicio,
             telefono: body.telefono,
             correo: body.correo,
-            usuario: body.usuario
+            usuario: body.usuario,
+            rol: body.rol,
+            activo: body.activo
         }
+
+        // Igual que con clientes: solo se toca/re-encripta la contraseña si
+        // se envió una nueva; en blanco significa "conservar la actual"
+        if (body.password) {
+            datosActualizar.password = await cifrarPassword(body.password);
+        }
+
         const agenteActualizado = await agenteModelo.findByIdAndUpdate(id, datosActualizar, { new: true });
         if (agenteActualizado != null) {
             res.status(200).send(agenteActualizado);

@@ -8,6 +8,9 @@ const ticketOperaciones = {}
 
 const CARPETA_ADJUNTOS = path.join(__dirname, "..", "uploads", "tickets");
 
+// Únicos roles que pueden asignar (o reasignar) un ticket a un agente de soporte
+const ROLES_QUE_ASIGNAN = ["Administrador", "Calldispatcher"];
+
 // Traduce el texto libre de estadotk al campo correspondiente del ANS
 const normalizarEstadoAns = (estadotk) => {
     if (!estadotk) return null;
@@ -283,8 +286,25 @@ ticketOperaciones.modificarTicket = async (req, res) => {
             return res.status(404).send("No hay datos");
         }
 
+        // Un Agente solo puede gestionar (resolver) los tickets que tiene
+        // asignados; no puede tocar el resto ni asignarse a sí mismo uno nuevo.
+        // Se compara contra "nombreAgente" (el campo "nombres" tal cual, sin
+        // apellidos) porque así es como queda guardado en ticket.agente al
+        // asignarlo (ver el <option value={agente.nombres}> del desplegable);
+        // "nombres" en el token es el nombre completo, para mostrar en pantalla.
+        if (req.usuario?.rol === "Agente" && ticketActual.agente !== req.usuario.nombreAgente) {
+            return res.status(403).send("Solo puedes gestionar tickets que tengas asignados.");
+        }
+
         if (body.estadotk && body.estadotk !== ticketActual.estadotk && !esTransicionValida(ticketActual.estadotk, body.estadotk)) {
             return res.status(400).send(`No se puede pasar de "${ticketActual.estadotk}" a "${body.estadotk}" directamente.`);
+        }
+
+        // Asignar o reasignar un agente es exclusivo de Administrador/Calldispatcher.
+        // req.usuario lo deja verificarToken (obligatorio en esta ruta).
+        const estaAsignandoAgente = body.agente != null && body.agente !== ticketActual.agente;
+        if (estaAsignandoAgente && !ROLES_QUE_ASIGNAN.includes(req.usuario?.rol)) {
+            return res.status(403).send("Solo un administrador o call dispatcher puede asignar el caso a un agente.");
         }
 
         const datosActualizar = {
@@ -297,6 +317,17 @@ ticketOperaciones.modificarTicket = async (req, res) => {
             fechaCierre: body.fechaCierre,
             motivoSuspension: body.motivoSuspension,
             impacto: body.impacto
+        }
+
+        // Deja constancia de quién asignó el caso y cuándo (no repudio /
+        // trazabilidad): el agente no puede alegar que nadie se lo asignó.
+        if (estaAsignandoAgente) {
+            datosActualizar.fechaAsignacion = new Date();
+            datosActualizar.asignadoPor = {
+                id: req.usuario.id,
+                nombres: req.usuario.nombres,
+                correo: req.usuario.correo
+            };
         }
 
         // Si el estado cambia, cierra el tramo del estado saliente y acumula sus minutos
