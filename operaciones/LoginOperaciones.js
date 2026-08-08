@@ -1,11 +1,41 @@
 const ClienteModelo = require("../modelos/ClienteModelo");
+const AgenteModelo = require("../modelos/AgentesModelo");
 const bcrypt = require("bcrypt");
 const crypto = require("crypto");
+const jwt = require("jsonwebtoken");
 const correoServicio = require("../servicios/correoServicio");
 const LoginOperaciones = {};
 
 const SALT_TIMES = 10;
 const DURACION_TOKEN_MS = 60 * 60 * 1000; // 1 hora
+const DURACION_SESION = "8h";
+
+// Firma el token de sesión que el frontend debe enviar como
+// "Authorization: Bearer <token>" en cada petición protegida. El rol viaja
+// dentro del token (no se vuelve a preguntar a la base de datos en cada
+// petición) para que verificarToken/requiereAdmin puedan decidir el acceso
+// sin una consulta extra.
+//
+// "nombres" es el nombre completo (para saludar/mostrar en pantalla).
+// "nombreAgente" es el valor EXACTO del campo "nombres" del agente, sin
+// concatenar apellidos: es lo que queda guardado en ticket.agente cuando el
+// dispatcher lo asigna (ver el <option value={agente.nombres}> del
+// desplegable), así que "Mis tickets" y el control de que un agente solo
+// toque lo suyo tienen que comparar contra este mismo valor, no contra el
+// nombre completo.
+const generarTokenSesion = (usuario, esAgente) => {
+    return jwt.sign(
+        {
+            id: usuario._id,
+            nombres: usuario.nombres + " " + usuario.apellidos,
+            nombreAgente: esAgente ? usuario.nombres : undefined,
+            correo: usuario.correo,
+            rol: usuario.rol
+        },
+        process.env.JWT_SECRET,
+        { expiresIn: DURACION_SESION }
+    );
+}
 
 const compararPassword = async (recibido, guardado) => {
     return await bcrypt.compare(recibido, guardado);
@@ -23,27 +53,43 @@ const hashearToken = (token) => {
 LoginOperaciones.login = async(req, res) => {
     try {
         const correo = req.body.correo;
-        let password = req.body.password;
-        const user = await ClienteModelo.findOne({correo: correo});
-        if (user != null) {
-            const result = await compararPassword(password, user.password);
-            if (result) {
-                const acceso = {
-                    id: user._id,
-                    nombres: user.nombres+" "+user.apellidos,
-                    correo: user.correo,
-                    es_admin: user.es_admin,
-                    //token: generarToken(usuario.id, usuario.nombres+" "+usuario.apellidos, usuario.es_admin)
-                }
-                res.status(200).json(acceso);
-            }
-            else {
-                res.status(401).send("Email o contraseña incorrectos");    
-            }
+        const password = req.body.password;
+
+        // Clientes (incluye Administrador/Calldispatcher dados de alta como
+        // cliente) y Agentes son dos colecciones distintas que ahora pueden
+        // iniciar sesión; se busca la cuenta por correo en ambas.
+        let user = await ClienteModelo.findOne({ correo: correo });
+        let esAgente = false;
+        if (user == null) {
+            user = await AgenteModelo.findOne({ correo: correo });
+            esAgente = user != null;
         }
-        else {
-            res.status(401).send("Email o contraseña incorrectos");
+
+        // Sin contraseña configurada (agentes migrados antes de tener login
+        // propio) no hay nada que comparar: se trata igual que credenciales
+        // inválidas, sin revelar el motivo exacto.
+        if (user == null || !user.password) {
+            return res.status(401).send("Email o contraseña incorrectos");
         }
+
+        const result = await compararPassword(password, user.password);
+        if (!result) {
+            return res.status(401).send("Email o contraseña incorrectos");
+        }
+
+        if (user.activo === false) {
+            return res.status(401).send("Tu cuenta está inactiva. Contacta al administrador.");
+        }
+
+        const acceso = {
+            id: user._id,
+            nombres: user.nombres+" "+user.apellidos,
+            nombreAgente: esAgente ? user.nombres : undefined,
+            correo: user.correo,
+            rol: user.rol,
+            token: generarTokenSesion(user, esAgente)
+        }
+        res.status(200).json(acceso);
     } catch (error) {
         console.log(error);
         res.status(400).json(error);
@@ -54,7 +100,11 @@ LoginOperaciones.solicitarRecuperacion = async (req, res) => {
     const MENSAJE_GENERICO = "Si el correo está registrado, se envió un enlace de recuperación";
     try {
         const correo = req.body.correo;
-        const user = await ClienteModelo.findOne({ correo: correo });
+        // Igual que en login: la cuenta puede ser de cliente o de agente
+        let user = await ClienteModelo.findOne({ correo: correo });
+        if (user == null) {
+            user = await AgenteModelo.findOne({ correo: correo });
+        }
 
         if (user != null) {
             const token = crypto.randomBytes(32).toString("hex");
@@ -86,10 +136,14 @@ LoginOperaciones.restablecerPassword = async (req, res) => {
             return res.status(400).send("Falta el token o la nueva contraseña");
         }
 
-        const user = await ClienteModelo.findOne({
+        const filtroToken = {
             resetPasswordToken: hashearToken(token),
             resetPasswordExpira: { $gt: new Date() }
-        });
+        };
+        let user = await ClienteModelo.findOne(filtroToken);
+        if (user == null) {
+            user = await AgenteModelo.findOne(filtroToken);
+        }
 
         if (user == null) {
             return res.status(400).send("El enlace es inválido o ya expiró");

@@ -22,6 +22,16 @@ const TicketSchema = mongoose.Schema({
     },
     solicitud: { type: String, maxLength: 400, required: true, unique: false },
     agente: { type: String, maxLength: 50, required: false, unique: false },
+    // Trazabilidad de la asignación: quién asignó el agente y cuándo, para que
+    // no exista repudio (el agente no puede alegar que nadie se lo asignó, y
+    // queda registrado qué Administrador/Calldispatcher tomó la decisión).
+    // Se recalcula cada vez que "agente" cambia (ver TicketOperaciones.modificarTicket).
+    asignadoPor: {
+        id: { type: String, required: false },
+        nombres: { type: String, required: false },
+        correo: { type: String, required: false }
+    },
+    fechaAsignacion: { type: Date, required: false },
     estadotk: { type: String, maxLength: 50, required: false, unique: false },
     cierre: { type: String, maxLength: 400, required: false, unique: false },
     fechaCierre:  { type: Date, required: false, unique: false },

@@ -43,8 +43,8 @@ nivelServicioOperaciones.crearNivelServicio = async (req, res) => {
 }
 
 // Lista los niveles de servicio configurados. El frontend la usa tanto en la
-// pantalla de configuración (todos) como para poblar el desplegable de rol
-// al crear un agente (filtrando por ?activo=true).
+// pantalla de configuración (todos) como para poblar el desplegable de
+// nivel de servicio al crear un agente (filtrando por ?activo=true).
 nivelServicioOperaciones.buscarNivelesServicio = async (req, res) => {
     try {
         const query = req.query;

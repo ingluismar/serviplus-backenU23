@@ -16,7 +16,7 @@ const ETIQUETAS_CAMPO = {
     correo: "correo",
     usuario: "usuario",
     password: "contraseña",
-    es_admin: "rol de usuario"
+    rol: "rol de usuario"
 };
 
 // Traduce los errores técnicos de Mongo/Mongoose a un mensaje claro para el usuario
@@ -49,6 +49,12 @@ const traducirErrorCliente = (error) => {
 clienteOperaciones.crearCliente = async (req, res) => {
     try {
         const body = req.body;
+        // Este endpoint es público (auto-registro): nunca se confía en el rol
+        // que venga en el cuerpo de la petición, o cualquiera podría
+        // registrarse como Administrador/Calldispatcher mandando la petición
+        // directo a la API. Toda cuenta nueva nace Cliente; solo el
+        // administrador puede subirle el rol después (modificarCliente).
+        body.rol = "Cliente";
         body.password = await cifrarPassword(body.password);
         const cliente = new clienteModelo(body);
         const clienteGuardado = await cliente.save();
@@ -68,7 +74,8 @@ clienteOperaciones.buscarClientes = async (req, res) => {
                     { "nombres": { $regex: query.q, $options: "i"}},
                     { "apellidos": { $regex: query.q, $options: "i"}},
                     { "documento": { $regex: query.q, $options: "i"}},
-                    { "usuario": { $regex: query.q, $options: "i"}}
+                    { "usuario": { $regex: query.q, $options: "i"}},
+                    { "correo": { $regex: query.q, $options: "i"}}
                 ]
             });
         }
@@ -111,7 +118,8 @@ clienteOperaciones.modificarCliente = async (req, res) => {
             telefono: body.telefono,
             correo: body.correo,
             usuario: body.usuario,
-            es_admin: body.es_admin
+            rol: body.rol,
+            activo: body.activo
         }
 
         // Solo se actualiza y re-encripta la contraseña si se envió una nueva;
