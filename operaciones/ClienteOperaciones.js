@@ -1,5 +1,7 @@
 const clienteModelo = require("../modelos/ClienteModelo");
 const bcrypt = require("bcrypt");
+const auditoriaServicio = require("../servicios/auditoriaServicio");
+const { EVENTOS_AUDITORIA } = auditoriaServicio;
 const clienteOperaciones = {}
 
 const cifrarPassword = async (password) => {
@@ -58,6 +60,22 @@ clienteOperaciones.crearCliente = async (req, res) => {
         body.password = await cifrarPassword(body.password);
         const cliente = new clienteModelo(body);
         const clienteGuardado = await cliente.save();
+
+        // Autorregistro público: no hay sesión (req.usuario), así que el
+        // "usuario" del evento es la propia cuenta recién creada.
+        auditoriaServicio.registrar(req, {
+            evento: EVENTOS_AUDITORIA.REGISTRO_CLIENTE,
+            modulo: "Clientes",
+            descripcion: "Autorregistro de cliente",
+            usuario: {
+                id: clienteGuardado._id,
+                nombres: clienteGuardado.nombres + " " + clienteGuardado.apellidos,
+                correo: clienteGuardado.correo,
+                rol: clienteGuardado.rol
+            },
+            entidadAfectada: { tipo: "Cliente", id: clienteGuardado._id, referencia: clienteGuardado.correo }
+        });
+
         res.status(201).send(clienteGuardado);
     } catch (error) {
         res.status(400).send(traducirErrorCliente(error));
@@ -129,6 +147,12 @@ clienteOperaciones.modificarCliente = async (req, res) => {
         }
         const clienteActualizado = await clienteModelo.findByIdAndUpdate(id, datosActualizar, { new: true });
         if (clienteActualizado != null) {
+            auditoriaServicio.registrar(req, {
+                evento: EVENTOS_AUDITORIA.MODIFICACION_CLIENTE,
+                modulo: "Clientes",
+                descripcion: "Modificación de datos de cliente",
+                entidadAfectada: { tipo: "Cliente", id: clienteActualizado._id, referencia: clienteActualizado.correo }
+            });
             res.status(200).send(clienteActualizado);
         }
         else {
@@ -145,6 +169,12 @@ clienteOperaciones.borrarCliente = async (req, res) => {
         const id = req.params.id;
         const cliente = await clienteModelo.findByIdAndDelete(id);
         if (cliente != null) {
+            auditoriaServicio.registrar(req, {
+                evento: EVENTOS_AUDITORIA.ELIMINACION_CLIENTE,
+                modulo: "Clientes",
+                descripcion: "Eliminación de cliente",
+                entidadAfectada: { tipo: "Cliente", id: cliente._id, referencia: cliente.correo }
+            });
             res.status(200).send(cliente);
         } else {
             res.status(404).send("No hay datos");

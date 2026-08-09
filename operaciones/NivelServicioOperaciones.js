@@ -1,4 +1,6 @@
 const nivelServicioModelo = require("../modelos/NivelServicioModelo");
+const auditoriaServicio = require("../servicios/auditoriaServicio");
+const { EVENTOS_AUDITORIA } = auditoriaServicio;
 const nivelServicioOperaciones = {}
 
 const ETIQUETAS_CAMPO = {
@@ -36,6 +38,14 @@ nivelServicioOperaciones.crearNivelServicio = async (req, res) => {
         const body = req.body;
         const nivelServicio = new nivelServicioModelo(body);
         const nivelServicioGuardado = await nivelServicio.save();
+
+        auditoriaServicio.registrar(req, {
+            evento: EVENTOS_AUDITORIA.CREACION_NIVEL_SERVICIO,
+            modulo: "Niveles de servicio",
+            descripcion: `Creación del nivel de servicio "${nivelServicioGuardado.nombre}"`,
+            entidadAfectada: { tipo: "NivelServicio", id: nivelServicioGuardado._id, referencia: nivelServicioGuardado.nombre }
+        });
+
         res.status(201).send(nivelServicioGuardado);
     } catch (error) {
         res.status(400).send(traducirErrorNivelServicio(error));
@@ -97,6 +107,12 @@ nivelServicioOperaciones.modificarNivelServicio = async (req, res) => {
         }
         const nivelServicioActualizado = await nivelServicioModelo.findByIdAndUpdate(id, datosActualizar, { new: true, runValidators: true });
         if (nivelServicioActualizado != null) {
+            auditoriaServicio.registrar(req, {
+                evento: EVENTOS_AUDITORIA.MODIFICACION_NIVEL_SERVICIO,
+                modulo: "Niveles de servicio",
+                descripcion: `Modificación del nivel de servicio "${nivelServicioActualizado.nombre}"`,
+                entidadAfectada: { tipo: "NivelServicio", id: nivelServicioActualizado._id, referencia: nivelServicioActualizado.nombre }
+            });
             res.status(200).send(nivelServicioActualizado);
         }
         else {
@@ -112,6 +128,12 @@ nivelServicioOperaciones.borrarNivelServicio = async (req, res) => {
         const id = req.params.id;
         const nivelServicio = await nivelServicioModelo.findByIdAndDelete(id);
         if (nivelServicio != null) {
+            auditoriaServicio.registrar(req, {
+                evento: EVENTOS_AUDITORIA.ELIMINACION_NIVEL_SERVICIO,
+                modulo: "Niveles de servicio",
+                descripcion: `Eliminación del nivel de servicio "${nivelServicio.nombre}"`,
+                entidadAfectada: { tipo: "NivelServicio", id: nivelServicio._id, referencia: nivelServicio.nombre }
+            });
             res.status(200).send(nivelServicio);
         } else {
             res.status(404).send("No hay datos");
