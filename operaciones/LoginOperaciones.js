@@ -4,6 +4,8 @@ const bcrypt = require("bcrypt");
 const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
 const correoServicio = require("../servicios/correoServicio");
+const auditoriaServicio = require("../servicios/auditoriaServicio");
+const { EVENTOS_AUDITORIA } = auditoriaServicio;
 const LoginOperaciones = {};
 
 const SALT_TIMES = 10;
@@ -69,15 +71,36 @@ LoginOperaciones.login = async(req, res) => {
         // propio) no hay nada que comparar: se trata igual que credenciales
         // inválidas, sin revelar el motivo exacto.
         if (user == null || !user.password) {
+            auditoriaServicio.registrar(req, {
+                evento: EVENTOS_AUDITORIA.LOGIN_FALLIDO,
+                modulo: "Autenticación",
+                resultado: "FALLIDO",
+                descripcion: "Intento de inicio de sesión con un correo no registrado",
+                usuario: { id: null, nombres: null, correo, rol: null }
+            });
             return res.status(401).send("Email o contraseña incorrectos");
         }
 
         const result = await compararPassword(password, user.password);
         if (!result) {
+            auditoriaServicio.registrar(req, {
+                evento: EVENTOS_AUDITORIA.LOGIN_FALLIDO,
+                modulo: "Autenticación",
+                resultado: "FALLIDO",
+                descripcion: "Contraseña incorrecta",
+                usuario: { id: user._id, nombres: user.nombres + " " + user.apellidos, correo, rol: user.rol }
+            });
             return res.status(401).send("Email o contraseña incorrectos");
         }
 
         if (user.activo === false) {
+            auditoriaServicio.registrar(req, {
+                evento: EVENTOS_AUDITORIA.LOGIN_FALLIDO,
+                modulo: "Autenticación",
+                resultado: "FALLIDO",
+                descripcion: "Cuenta inactiva",
+                usuario: { id: user._id, nombres: user.nombres + " " + user.apellidos, correo, rol: user.rol }
+            });
             return res.status(401).send("Tu cuenta está inactiva. Contacta al administrador.");
         }
 
@@ -89,6 +112,15 @@ LoginOperaciones.login = async(req, res) => {
             rol: user.rol,
             token: generarTokenSesion(user, esAgente)
         }
+
+        auditoriaServicio.registrar(req, {
+            evento: EVENTOS_AUDITORIA.LOGIN_EXITOSO,
+            modulo: "Autenticación",
+            resultado: "EXITOSO",
+            descripcion: `Inicio de sesión (${esAgente ? "agente" : "cliente"})`,
+            usuario: { id: acceso.id, nombres: acceso.nombres, correo: acceso.correo, rol: acceso.rol }
+        });
+
         res.status(200).json(acceso);
     } catch (error) {
         console.log(error);
@@ -118,6 +150,13 @@ LoginOperaciones.solicitarRecuperacion = async (req, res) => {
             } catch (errorCorreo) {
                 console.log("Error al enviar correo de recuperación:", errorCorreo);
             }
+
+            auditoriaServicio.registrar(req, {
+                evento: EVENTOS_AUDITORIA.SOLICITUD_RECUPERACION_PASSWORD,
+                modulo: "Autenticación",
+                descripcion: "Solicitud de enlace de recuperación de contraseña",
+                usuario: { id: user._id, nombres: user.nombres + " " + user.apellidos, correo: user.correo, rol: user.rol }
+            });
         }
 
         // Respuesta genérica siempre, para no revelar si el correo existe o no
@@ -153,6 +192,13 @@ LoginOperaciones.restablecerPassword = async (req, res) => {
         user.resetPasswordToken = undefined;
         user.resetPasswordExpira = undefined;
         await user.save();
+
+        auditoriaServicio.registrar(req, {
+            evento: EVENTOS_AUDITORIA.RESTABLECIMIENTO_PASSWORD,
+            modulo: "Autenticación",
+            descripcion: "Contraseña restablecida mediante enlace de recuperación",
+            usuario: { id: user._id, nombres: user.nombres + " " + user.apellidos, correo: user.correo, rol: user.rol }
+        });
 
         res.status(200).send("Contraseña actualizada correctamente");
     } catch (error) {

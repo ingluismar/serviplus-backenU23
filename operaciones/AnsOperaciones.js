@@ -1,4 +1,6 @@
 const ansModelo = require("../modelos/AnsModelo");
+const auditoriaServicio = require("../servicios/auditoriaServicio");
+const { EVENTOS_AUDITORIA } = auditoriaServicio;
 const ansOperaciones = {}
 
 
@@ -7,6 +9,13 @@ ansOperaciones.crearAns = async (req, res) => {
         const body = req.body;
         const ans = new ansModelo(body);
         const ansGuardado = await ans.save();
+
+        auditoriaServicio.registrar(req, {
+            evento: EVENTOS_AUDITORIA.CREACION_ANS,
+            modulo: "ANS",
+            descripcion: "Creación de parametrización de ANS"
+        });
+
         res.status(201).send(ansGuardado);
     } catch (error) {
         res.status(400).json(error);
@@ -66,6 +75,11 @@ ansOperaciones.modificarAns = async (req, res) => {
         }
         const ansActualizado = await ansModelo.findByIdAndUpdate(id, datosActualizar, { new: true });
         if (ansActualizado != null) {
+            auditoriaServicio.registrar(req, {
+                evento: EVENTOS_AUDITORIA.MODIFICACION_ANS,
+                modulo: "ANS",
+                descripcion: `Modificación de parametrización de ANS (pendiente: ${ansActualizado.pendiente}h, proceso: ${ansActualizado.proceso}h, solucionado: ${ansActualizado.solucionado}h)`
+            });
             res.status(200).send(ansActualizado);
         }
         else {
@@ -84,6 +98,11 @@ ansOperaciones.borrarAns = async (req, res) => {
         const id = req.params.id;
         const ans = await ansModelo.findByIdAndDelete(id);
         if (ans != null) {
+            auditoriaServicio.registrar(req, {
+                evento: EVENTOS_AUDITORIA.ELIMINACION_ANS,
+                modulo: "ANS",
+                descripcion: "Eliminación de parametrización de ANS"
+            });
             res.status(200).send(ans);
         } else {
             res.status(404).send("No hay datos");

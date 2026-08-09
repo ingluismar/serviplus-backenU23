@@ -4,6 +4,8 @@ const ticketModelo = require("../modelos/TicketModelo");
 const ansModelo = require("../modelos/AnsModelo");
 const clienteModelo = require("../modelos/ClienteModelo");
 const correoServicio = require("../servicios/correoServicio");
+const auditoriaServicio = require("../servicios/auditoriaServicio");
+const { EVENTOS_AUDITORIA } = auditoriaServicio;
 const ticketOperaciones = {}
 
 const CARPETA_ADJUNTOS = path.join(__dirname, "..", "uploads", "tickets");
@@ -159,6 +161,27 @@ const enviarNotificacionTicketCreado = async (ticket) => {
     }
 };
 
+// Crear y borrar ticket son rutas públicas (sin verificarToken), así que no
+// hay sesión de la que tomar el usuario para la auditoría; se resuelve por
+// mejor esfuerzo contra el cliente indicado en el propio ticket, y si no hay
+// ninguno se deja constancia de que fue un actor anónimo.
+const usuarioParaAuditoria = async (req, clienteId) => {
+    if (req.usuario) {
+        return { id: req.usuario.id, nombres: req.usuario.nombres, correo: req.usuario.correo, rol: req.usuario.rol };
+    }
+    if (clienteId) {
+        try {
+            const cliente = await clienteModelo.findById(clienteId);
+            if (cliente) {
+                return { id: cliente._id, nombres: cliente.nombres + " " + cliente.apellidos, correo: cliente.correo, rol: cliente.rol };
+            }
+        } catch (error) {
+            // id con formato inválido u otro error de lectura: se registra como anónimo
+        }
+    }
+    return { id: null, nombres: "Anónimo", correo: null, rol: null };
+};
+
 ticketOperaciones.crearTicket = async (req, res) => {
     try {
         const nuevoTicketData = req.body;
@@ -202,6 +225,16 @@ ticketOperaciones.crearTicket = async (req, res) => {
 
         // Notifica al cliente por correo (no se espera su resultado para no retrasar la respuesta)
         enviarNotificacionTicketCreado(ticketGuardado);
+
+        usuarioParaAuditoria(req, ticketGuardado.cliente).then((usuario) => {
+            auditoriaServicio.registrar(req, {
+                evento: EVENTOS_AUDITORIA.CREACION_TICKET,
+                modulo: "Tickets",
+                descripcion: `Creación del ticket ${ticketGuardado.numeracionTicket} (${ticketGuardado.tipo} - ${ticketGuardado.categoria})`,
+                usuario,
+                entidadAfectada: { tipo: "Ticket", id: ticketGuardado._id, referencia: ticketGuardado.numeracionTicket }
+            });
+        });
 
     } catch (error) {
        
@@ -349,6 +382,26 @@ ticketOperaciones.modificarTicket = async (req, res) => {
 
         const ticketActualizado = await ticketModelo.findByIdAndUpdate(id, datosActualizar, { new: true });
         if (ticketActualizado != null) {
+            // La asignación de agente es el evento sensible para efectos de
+            // trazabilidad/no-repudio; el resto de ediciones (respuesta, cambio
+            // de estado, cierre, etc.) se registran como modificación general.
+            if (estaAsignandoAgente) {
+                auditoriaServicio.registrar(req, {
+                    evento: EVENTOS_AUDITORIA.ASIGNACION_TICKET,
+                    modulo: "Tickets",
+                    descripcion: `Asignación del ticket ${ticketActualizado.numeracionTicket} al agente "${body.agente}"`,
+                    entidadAfectada: { tipo: "Ticket", id: ticketActualizado._id, referencia: ticketActualizado.numeracionTicket }
+                });
+            } else {
+                auditoriaServicio.registrar(req, {
+                    evento: EVENTOS_AUDITORIA.MODIFICACION_TICKET,
+                    modulo: "Tickets",
+                    descripcion: body.estadotk && body.estadotk !== ticketActual.estadotk
+                        ? `Cambio de estado del ticket ${ticketActualizado.numeracionTicket}: "${ticketActual.estadotk}" -> "${body.estadotk}"`
+                        : `Modificación del ticket ${ticketActualizado.numeracionTicket}`,
+                    entidadAfectada: { tipo: "Ticket", id: ticketActualizado._id, referencia: ticketActualizado.numeracionTicket }
+                });
+            }
             res.status(200).send(await adjuntarEstadoAns(ticketActualizado));
         }
         else {
@@ -364,6 +417,14 @@ ticketOperaciones.borrarTicket = async (req, res) => {
         const id = req.params.id;
         const ticket = await ticketModelo.findByIdAndDelete(id);
         if (ticket != null) {
+            const usuario = await usuarioParaAuditoria(req, ticket.cliente);
+            auditoriaServicio.registrar(req, {
+                evento: EVENTOS_AUDITORIA.ELIMINACION_TICKET,
+                modulo: "Tickets",
+                descripcion: `Eliminación del ticket ${ticket.numeracionTicket}`,
+                usuario,
+                entidadAfectada: { tipo: "Ticket", id: ticket._id, referencia: ticket.numeracionTicket }
+            });
             res.status(200).send(ticket);
         } else {
             res.status(404).send("No hay datos");

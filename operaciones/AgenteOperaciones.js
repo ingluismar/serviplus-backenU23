@@ -1,6 +1,8 @@
 const agenteModelo = require("../modelos/AgentesModelo");
 const nivelServicioModelo = require("../modelos/NivelServicioModelo");
 const bcrypt = require("bcrypt");
+const auditoriaServicio = require("../servicios/auditoriaServicio");
+const { EVENTOS_AUDITORIA } = auditoriaServicio;
 const agenteOperaciones = {}
 
 const SALT_TIMES = 10;
@@ -73,6 +75,14 @@ agenteOperaciones.crearAgente = async (req, res) => {
         }
         const agente = new agenteModelo(body);
         const agenteGuardado = await agente.save();
+
+        auditoriaServicio.registrar(req, {
+            evento: EVENTOS_AUDITORIA.CREACION_AGENTE,
+            modulo: "Agentes",
+            descripcion: `Creación de agente con rol ${agenteGuardado.rol}`,
+            entidadAfectada: { tipo: "Agente", id: agenteGuardado._id, referencia: agenteGuardado.correo }
+        });
+
         res.status(201).send(agenteGuardado);
     } catch (error) {
         res.status(400).send(traducirErrorAgente(error));
@@ -152,6 +162,12 @@ agenteOperaciones.modificarAgente = async (req, res) => {
 
         const agenteActualizado = await agenteModelo.findByIdAndUpdate(id, datosActualizar, { new: true });
         if (agenteActualizado != null) {
+            auditoriaServicio.registrar(req, {
+                evento: EVENTOS_AUDITORIA.MODIFICACION_AGENTE,
+                modulo: "Agentes",
+                descripcion: "Modificación de datos de agente",
+                entidadAfectada: { tipo: "Agente", id: agenteActualizado._id, referencia: agenteActualizado.correo }
+            });
             res.status(200).send(agenteActualizado);
         }
         else {
@@ -168,6 +184,12 @@ agenteOperaciones.borrarAgente = async (req, res) => {
         const id = req.params.id;
         const agente = await agenteModelo.findByIdAndDelete(id);
         if (agente != null) {
+            auditoriaServicio.registrar(req, {
+                evento: EVENTOS_AUDITORIA.ELIMINACION_AGENTE,
+                modulo: "Agentes",
+                descripcion: "Eliminación de agente",
+                entidadAfectada: { tipo: "Agente", id: agente._id, referencia: agente.correo }
+            });
             res.status(200).send(agente);
         } else {
             res.status(404).send("No hay datos");
