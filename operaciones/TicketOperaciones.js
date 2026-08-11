@@ -23,14 +23,19 @@ const normalizarEstadoAns = (estadotk) => {
     return null;
 };
 
-// Calcula fecha límite, minutos restantes y si el ticket ya venció según el ANS configurado
+// Calcula fecha límite, minutos restantes y si el ticket ya venció. Usa el
+// ANS estándar (ansConfig.pendiente/proceso/solucionado) salvo que el ticket
+// sea una solicitud VIP/directiva (Ticket.esVip) Y exista un ANS "vip"
+// parametrizado aparte (ansConfig.vip) — ver AnsModelo. Si es VIP pero no hay
+// un ANS vip configurado, cae de vuelta al estándar en vez de quedarse sin ANS.
 const calcularEstadoAns = (ticket, ansConfig) => {
     const estado = normalizarEstadoAns(ticket.estadotk);
-    if (!estado || !ansConfig || ansConfig[estado] == null || !ticket.fecha) {
+    const perfil = (ticket.esVip && ansConfig?.vip) ? ansConfig.vip : ansConfig;
+    if (!estado || !perfil || perfil[estado] == null || !ticket.fecha) {
         return { fechaLimite: null, tiempoRestanteMin: null, vencido: null };
     }
 
-    const horas = ansConfig[estado];
+    const horas = perfil[estado];
     const fechaLimite = new Date(ticket.fecha.getTime() + horas * 60 * 60 * 1000);
     // Si ya se solucionó, se valida contra el momento del cierre; si no, contra ahora
     const referencia = (estado === "solucionado" && ticket.fechaCierre) ? ticket.fechaCierre : new Date();
@@ -120,10 +125,13 @@ const calcularTiemposEnVivo = (ticket) => {
 };
 
 // Suma los tiempos (en horas) configurados para cada estado del ANS, es decir,
-// el tiempo total estimado para gestionar un ticket de principio a fin
-const calcularTiempoTotalAns = (ansConfig) => {
-    if (!ansConfig) return null;
-    return (ansConfig.pendiente || 0) + (ansConfig.proceso || 0) + (ansConfig.solucionado || 0);
+// el tiempo total estimado para gestionar un ticket de principio a fin. Usa el
+// ANS vip si el cliente es VIP/directivo y hay uno parametrizado; si no, el
+// estándar — mismo criterio que calcularEstadoAns.
+const calcularTiempoTotalAns = (ansConfig, esVip) => {
+    const perfil = (esVip && ansConfig?.vip) ? ansConfig.vip : ansConfig;
+    if (!perfil) return null;
+    return (perfil.pendiente || 0) + (perfil.proceso || 0) + (perfil.solucionado || 0);
 };
 
 // Da un formato legible en español a un total de horas (ej. "1 día y 4 horas")
@@ -149,7 +157,7 @@ const enviarNotificacionTicketCreado = async (ticket) => {
         if (!cliente || !cliente.correo) return;
 
         const ansConfig = await ansModelo.findOne();
-        const tiempoTotal = calcularTiempoTotalAns(ansConfig);
+        const tiempoTotal = calcularTiempoTotalAns(ansConfig, cliente.esVip === true);
 
         await correoServicio.enviarCorreoTicketCreado(
             cliente.correo,
@@ -204,6 +212,16 @@ ticketOperaciones.crearTicket = async (req, res) => {
 
         // El cronómetro del estado inicial (Pendiente) arranca en el momento de creación
         nuevoTicketData.estadoDesde = nuevoTicketData.estadoDesde || new Date();
+
+        // Hereda la condición VIP/directiva del cliente que solicita (fuente
+        // de verdad: ClienteModelo.esVip). Queda copiada en el ticket para
+        // que el dispatcher la vea/corrija al triar sin depender de una
+        // consulta aparte al cliente, y para que sobreviva si el cliente deja
+        // de ser VIP más adelante.
+        if (nuevoTicketData.cliente) {
+            const clienteSolicitante = await clienteModelo.findById(nuevoTicketData.cliente);
+            nuevoTicketData.esVip = clienteSolicitante?.esVip === true;
+        }
 
         // Si se subió un archivo, guardar solo la referencia (el binario ya quedó en /uploads/tickets)
         if (req.file) {
@@ -349,7 +367,12 @@ ticketOperaciones.modificarTicket = async (req, res) => {
             cierre: body.cierre,
             fechaCierre: body.fechaCierre,
             motivoSuspension: body.motivoSuspension,
-            impacto: body.impacto
+            impacto: body.impacto,
+            // Prioridad y condición VIP se trian junto con el impacto (mismo
+            // formulario, mismo momento) y con la misma ausencia de
+            // restricción de rol adicional que ya tiene impacto.
+            prioridad: body.prioridad,
+            esVip: body.esVip
         }
 
         // Deja constancia de quién asignó el caso y cuándo (no repudio /

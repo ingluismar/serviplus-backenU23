@@ -67,18 +67,23 @@ ansOperaciones.modificarAns = async (req, res) => {
     try {
         const id = req.params.id;
         const body = req.body;
-        
+
         const datosActualizar = {
             pendiente: body.pendiente,
             proceso: body.proceso,
             solucionado: body.solucionado,
+            vip: body.vip
         }
-        const ansActualizado = await ansModelo.findByIdAndUpdate(id, datosActualizar, { new: true });
+        const ansActualizado = await ansModelo.findByIdAndUpdate(id, datosActualizar, { new: true, runValidators: true });
         if (ansActualizado != null) {
+            let descripcion = `Modificación de parametrización de ANS (estándar — pendiente: ${ansActualizado.pendiente}h, proceso: ${ansActualizado.proceso}h, solucionado: ${ansActualizado.solucionado}h)`;
+            if (ansActualizado.vip) {
+                descripcion += ` (VIP — pendiente: ${ansActualizado.vip.pendiente}h, proceso: ${ansActualizado.vip.proceso}h, solucionado: ${ansActualizado.vip.solucionado}h)`;
+            }
             auditoriaServicio.registrar(req, {
                 evento: EVENTOS_AUDITORIA.MODIFICACION_ANS,
                 modulo: "ANS",
-                descripcion: `Modificación de parametrización de ANS (pendiente: ${ansActualizado.pendiente}h, proceso: ${ansActualizado.proceso}h, solucionado: ${ansActualizado.solucionado}h)`
+                descripcion
             });
             res.status(200).send(ansActualizado);
         }

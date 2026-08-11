@@ -40,6 +40,18 @@ const TicketSchema = mongoose.Schema({
     // negocio (alcance de usuarios/servicios afectados). Lo define el
     // dispatcher/agente al triar el caso, es independiente del ANS (urgencia).
     impacto: { type: String, enum: ["Alto", "Medio", "Bajo"], required: false, unique: false },
+    // Prioridad del ticket: se sugiere en el frontend a partir de impacto ×
+    // esVip, pero el dispatcher/agente la asigna/ajusta manualmente al triar
+    // (igual que impacto). Es para priorizar y reportar (dashboard, cola de
+    // trabajo) — el ANS no depende de este campo, depende de esVip (ver
+    // AnsModelo y TicketOperaciones.calcularEstadoAns).
+    prioridad: { type: String, enum: ["Critica", "Alta", "Media", "Baja"], required: false, unique: false },
+    // Copiado de Cliente.esVip al crear el ticket (ver crearTicket), para que
+    // el ticket conserve su condición aunque el cliente cambie después, y el
+    // dispatcher pueda corregirlo puntualmente sin tocar el maestro de clientes.
+    // Determina qué ANS aplica: si es true y hay un ANS "vip" parametrizado
+    // (ver AnsModelo), se usa ese en vez del estándar.
+    esVip: { type: Boolean, required: false, default: false, unique: false },
     // Marca desde cuándo el ticket está en el estado actual (estadotk).
     // Se usa para calcular, al momento del próximo cambio de estado, cuántos
     // minutos reales acumula ese estado.

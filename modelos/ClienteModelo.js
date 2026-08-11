@@ -16,6 +16,11 @@ const clienteSchema = mongoose.Schema({
     // Permite al administrador inactivar la cuenta sin borrarla. Un cliente
     // inactivo no puede iniciar sesión (ver LoginOperaciones.login).
     activo: { type: Boolean, required: true, default: true },
+    // Marca clientes VIP/directivos designados por la empresa. Se hereda a
+    // cada ticket nuevo de este cliente (ver TicketOperaciones.crearTicket)
+    // y sube la prioridad sugerida al triar el caso (ver sugerirPrioridad en
+    // el frontend), lo que a su vez le da un ANS más corto.
+    esVip: { type: Boolean, required: true, default: false },
     resetPasswordToken: { type: String, required: false },
     resetPasswordExpira: { type: Date, required: false }
 });

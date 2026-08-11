@@ -28,3 +28,4 @@ app.use("/agentes", require("./rutas/AgenteRutas"));
 app.use("/ans", require("./rutas/AnsRutas"));
 app.use("/niveles-servicio", require("./rutas/NivelServicioRutas"));
 app.use("/auditoria", require("./rutas/AuditoriaRutas"));
+app.use("/configuracion-correo", require("./rutas/ConfiguracionCorreoRutas"));

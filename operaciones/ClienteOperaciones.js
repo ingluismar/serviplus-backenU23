@@ -137,7 +137,8 @@ clienteOperaciones.modificarCliente = async (req, res) => {
             correo: body.correo,
             usuario: body.usuario,
             rol: body.rol,
-            activo: body.activo
+            activo: body.activo,
+            esVip: body.esVip
         }
 
         // Solo se actualiza y re-encripta la contraseña si se envió una nueva;
