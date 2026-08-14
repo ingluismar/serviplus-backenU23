@@ -5,6 +5,7 @@ const ansModelo = require("../modelos/AnsModelo");
 const clienteModelo = require("../modelos/ClienteModelo");
 const correoServicio = require("../servicios/correoServicio");
 const auditoriaServicio = require("../servicios/auditoriaServicio");
+const licenciaServicio = require("../servicios/licenciaServicio");
 const { EVENTOS_AUDITORIA } = auditoriaServicio;
 const ticketOperaciones = {}
 
@@ -217,10 +218,16 @@ ticketOperaciones.crearTicket = async (req, res) => {
         // de verdad: ClienteModelo.esVip). Queda copiada en el ticket para
         // que el dispatcher la vea/corrija al triar sin depender de una
         // consulta aparte al cliente, y para que sobreviva si el cliente deja
-        // de ser VIP más adelante.
+        // de ser VIP más adelante. Solo aplica si la licencia incluye el
+        // módulo "vip" (ver utilidades/licencia.js) — sin ese módulo, ningún
+        // ticket nace VIP sin importar lo que traiga el cliente o el propio
+        // cuerpo de la petición.
+        const licenciaIncluyeVip = (await licenciaServicio.obtenerEstado()).modulos.includes("vip");
         if (nuevoTicketData.cliente) {
             const clienteSolicitante = await clienteModelo.findById(nuevoTicketData.cliente);
-            nuevoTicketData.esVip = clienteSolicitante?.esVip === true;
+            nuevoTicketData.esVip = licenciaIncluyeVip && clienteSolicitante?.esVip === true;
+        } else if (!licenciaIncluyeVip) {
+            nuevoTicketData.esVip = false;
         }
 
         // Si se subió un archivo, guardar solo la referencia (el binario ya quedó en /uploads/tickets)
@@ -367,12 +374,18 @@ ticketOperaciones.modificarTicket = async (req, res) => {
             cierre: body.cierre,
             fechaCierre: body.fechaCierre,
             motivoSuspension: body.motivoSuspension,
-            impacto: body.impacto,
-            // Prioridad y condición VIP se trian junto con el impacto (mismo
-            // formulario, mismo momento) y con la misma ausencia de
-            // restricción de rol adicional que ya tiene impacto.
-            prioridad: body.prioridad,
-            esVip: body.esVip
+            impacto: body.impacto
+        }
+
+        // Prioridad y condición VIP se trian junto con el impacto (mismo
+        // formulario, mismo momento) y con la misma ausencia de restricción
+        // de rol adicional que ya tiene impacto — pero solo si la licencia
+        // incluye el módulo "vip"; si no, ni se incluyen en la actualización
+        // (no se tocan, quedan como estaban) para que no se puedan colar por
+        // fuera del formulario mandando el campo directo a la API.
+        if ((await licenciaServicio.obtenerEstado()).modulos.includes("vip")) {
+            datosActualizar.prioridad = body.prioridad;
+            datosActualizar.esVip = body.esVip;
         }
 
         // Deja constancia de quién asignó el caso y cuándo (no repudio /

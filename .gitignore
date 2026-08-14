@@ -112,3 +112,9 @@ uploads/tickets/*
 
 # Configuracion local de Claude Code (especifica de esta maquina/sesion)
 .claude/
+
+# Llave privada del sistema de licenciamiento (ver herramientas/README.md):
+# firma licencias, nunca debe salir de este equipo ni subirse a git. Los
+# .lic de prueba que se generen sueltos en la raiz tampoco se versionan.
+herramientas/claves/
+*.lic
