@@ -358,9 +358,22 @@ ticketOperaciones.modificarTicket = async (req, res) => {
             return res.status(400).send(`No se puede pasar de "${ticketActual.estadotk}" a "${body.estadotk}" directamente.`);
         }
 
+        // Escalamiento a segundo nivel: el agente de primer nivel "libera" su
+        // propio ticket (agente queda vacío) y lo marca nivel 2 con la
+        // especialidad requerida, para que el dispatcher lo re-triage hacia
+        // un especialista. A diferencia de asignar/reasignar a alguien más,
+        // esto SÍ lo puede hacer el propio Agente sobre su ticket: por eso se
+        // excluye explícitamente de la restricción de ROLES_QUE_ASIGNAN de
+        // abajo (ver FormGesTickets.js -> escalarTicket en el frontend).
+        const estaEscalando = body.nivel === 2
+            && ticketActual.nivel !== 2
+            && body.agente === ""
+            && req.usuario?.rol === "Agente"
+            && ticketActual.agente === req.usuario.nombreAgente;
+
         // Asignar o reasignar un agente es exclusivo de Administrador/Calldispatcher.
         // req.usuario lo deja verificarToken (obligatorio en esta ruta).
-        const estaAsignandoAgente = body.agente != null && body.agente !== ticketActual.agente;
+        const estaAsignandoAgente = body.agente != null && body.agente !== ticketActual.agente && !estaEscalando;
         if (estaAsignandoAgente && !ROLES_QUE_ASIGNAN.includes(req.usuario?.rol)) {
             return res.status(403).send("Solo un administrador o call dispatcher puede asignar el caso a un agente.");
         }
@@ -375,6 +388,17 @@ ticketOperaciones.modificarTicket = async (req, res) => {
             fechaCierre: body.fechaCierre,
             motivoSuspension: body.motivoSuspension,
             impacto: body.impacto
+        }
+
+        // Los campos de escalamiento solo se tocan cuando la petición
+        // realmente está escalando: así una edición/cierre/suspensión normal
+        // (que ni siquiera los envía) nunca los pisa sin querer.
+        if (estaEscalando) {
+            datosActualizar.nivel = body.nivel;
+            datosActualizar.especialidadRequerida = body.especialidadRequerida;
+            datosActualizar.motivoEscalamiento = body.motivoEscalamiento;
+            datosActualizar.agenteAnterior = body.agenteAnterior;
+            datosActualizar.fechaEscalamiento = body.fechaEscalamiento;
         }
 
         // Prioridad y condición VIP se trian junto con el impacto (mismo
@@ -421,7 +445,14 @@ ticketOperaciones.modificarTicket = async (req, res) => {
             // La asignación de agente es el evento sensible para efectos de
             // trazabilidad/no-repudio; el resto de ediciones (respuesta, cambio
             // de estado, cierre, etc.) se registran como modificación general.
-            if (estaAsignandoAgente) {
+            if (estaEscalando) {
+                auditoriaServicio.registrar(req, {
+                    evento: EVENTOS_AUDITORIA.ESCALAMIENTO_TICKET,
+                    modulo: "Tickets",
+                    descripcion: `Escalamiento a segundo nivel del ticket ${ticketActualizado.numeracionTicket} (especialidad: ${body.especialidadRequerida}). Motivo: ${body.motivoEscalamiento}`,
+                    entidadAfectada: { tipo: "Ticket", id: ticketActualizado._id, referencia: ticketActualizado.numeracionTicket }
+                });
+            } else if (estaAsignandoAgente) {
                 auditoriaServicio.registrar(req, {
                     evento: EVENTOS_AUDITORIA.ASIGNACION_TICKET,
                     modulo: "Tickets",

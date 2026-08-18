@@ -10,6 +10,26 @@ const agenteSchema = mongoose.Schema({
     // rol del sistema (ver abajo): diferencia la especialidad del agente,
     // no lo que puede hacer en la herramienta.
     nivelServicio:  { type : String, maxLength: 80, required: true, unique: false },
+    // Especialidades de segundo nivel (catálogo fijo, ver
+    // src/enum/EspecialidadAgente.js en el frontend): a qué dominio técnico
+    // puede atender este agente cuando un caso se escala desde primer nivel.
+    // Opcional y puede tener varias; un agente sin ninguna sigue pudiendo
+    // recibir casos de primer nivel con normalidad.
+    especialidades: {
+        type: [String],
+        required: false,
+        default: [],
+        enum: [
+            "Redes e Internet",
+            "Seguridad de la información",
+            "Bases de datos (DBA)",
+            "Infraestructura y servidores",
+            "Aplicaciones y desarrollo",
+            "Correo y colaboración",
+            "Telefonía y comunicaciones",
+            "ERP / aplicativos de negocio"
+        ]
+    },
     telefono : { type : String, required: true, unique: false },
     correo: { type : String, maxLength: 120, required: true, unique: false },
     usuario: { type : String, maxLength: 20, required: true, unique: true },

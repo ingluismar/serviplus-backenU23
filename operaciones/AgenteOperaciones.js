@@ -147,6 +147,7 @@ agenteOperaciones.modificarAgente = async (req, res) => {
             apellidos: body.apellidos,
             documento: body.documento,
             nivelServicio: body.nivelServicio,
+            especialidades: body.especialidades,
             telefono: body.telefono,
             correo: body.correo,
             usuario: body.usuario,

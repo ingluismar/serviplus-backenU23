@@ -68,7 +68,32 @@ const TicketSchema = mongoose.Schema({
         nombreArchivo: { type: String, required: false },
         tipo: { type: String, required: false },
         tamano: { type: Number, required: false }
-    }
+    },
+    // Escalamiento a segundo nivel: el ticket no cambia de "estadotk" al
+    // escalar (vuelve a "Pendiente", como cualquier ticket sin asignar) -
+    // "nivel" es la marca aparte que indica que ya pasó por primera línea y
+    // ahora requiere un especialista. Ver TicketOperaciones.modificarTicket
+    // (bloque "estaEscalando") y src/enum/EspecialidadAgente.js en el frontend.
+    nivel: { type: Number, enum: [1, 2], default: 1, required: false },
+    especialidadRequerida: {
+        type: String,
+        required: false,
+        enum: [
+            "Redes e Internet",
+            "Seguridad de la información",
+            "Bases de datos (DBA)",
+            "Infraestructura y servidores",
+            "Aplicaciones y desarrollo",
+            "Correo y colaboración",
+            "Telefonía y comunicaciones",
+            "ERP / aplicativos de negocio"
+        ]
+    },
+    motivoEscalamiento: { type: String, maxLength: 400, required: false },
+    // Trazabilidad de quién escaló el caso (el agente de primer nivel que no
+    // logró resolverlo), para que quede constancia igual que con asignadoPor.
+    agenteAnterior: { type: String, maxLength: 50, required: false },
+    fechaEscalamiento: { type: Date, required: false }
 });
 
 module.exports = mongoose.model("tickets", TicketSchema);
