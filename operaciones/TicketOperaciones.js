@@ -13,6 +13,13 @@ const CARPETA_ADJUNTOS = path.join(__dirname, "..", "uploads", "tickets");
 
 // Únicos roles que pueden asignar (o reasignar) un ticket a un agente de soporte
 const ROLES_QUE_ASIGNAN = ["Administrador", "Calldispatcher"];
+// El calldispatcher asigna y clasifica (triage) el caso, pero no reporta el
+// avance del trabajo; el agente hace lo contrario. Refleja en el backend la
+// misma división de responsabilidades que ya guía la vista en
+// FormGesTickets.js — así la restricción no depende solo de que la pantalla
+// oculte los campos, un llamado directo a la API también la respeta.
+const ROLES_QUE_TRIAN = ["Administrador", "Calldispatcher"];
+const ROLES_QUE_TRABAJAN_TICKET = ["Administrador", "Agente"];
 
 // Traduce el texto libre de estadotk al campo correspondiente del ANS
 const normalizarEstadoAns = (estadotk) => {
@@ -376,6 +383,24 @@ ticketOperaciones.modificarTicket = async (req, res) => {
         const estaAsignandoAgente = body.agente != null && body.agente !== ticketActual.agente && !estaEscalando;
         if (estaAsignandoAgente && !ROLES_QUE_ASIGNAN.includes(req.usuario?.rol)) {
             return res.status(403).send("Solo un administrador o call dispatcher puede asignar el caso a un agente.");
+        }
+
+        // Clasificar (impacto/prioridad/VIP) es del calldispatcher; solo se
+        // valida si el valor realmente cambia (no si llega igual al que ya
+        // tenía, que es lo normal cuando quien guarda no edita ese campo).
+        const estaCambiandoTriage = (body.impacto != null && body.impacto !== ticketActual.impacto)
+            || (body.prioridad != null && body.prioridad !== ticketActual.prioridad)
+            || (body.esVip != null && body.esVip !== ticketActual.esVip);
+        if (estaCambiandoTriage && !ROLES_QUE_TRIAN.includes(req.usuario?.rol)) {
+            return res.status(403).send("Solo un administrador o call dispatcher puede clasificar el ticket (impacto, prioridad o VIP).");
+        }
+
+        // Registrar el avance (solución/cierre, motivo de suspensión) es del
+        // agente que tiene el caso asignado.
+        const estaCambiandoAvance = (body.cierre != null && body.cierre !== ticketActual.cierre)
+            || (body.motivoSuspension != null && body.motivoSuspension !== ticketActual.motivoSuspension);
+        if (estaCambiandoAvance && !ROLES_QUE_TRABAJAN_TICKET.includes(req.usuario?.rol)) {
+            return res.status(403).send("Solo un administrador o el agente asignado puede registrar la solución o el motivo de suspensión.");
         }
 
         const datosActualizar = {
