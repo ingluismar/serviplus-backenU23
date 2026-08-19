@@ -385,20 +385,29 @@ ticketOperaciones.modificarTicket = async (req, res) => {
             return res.status(403).send("Solo un administrador o call dispatcher puede asignar el caso a un agente.");
         }
 
+        // El frontend normaliza campos de texto vacíos a "" al cargarlos
+        // (ver FormGesTickets.js -> cargarTicket), pero en Mongo un campo
+        // que nunca se tocó queda como undefined (sin default en el
+        // schema). Sin normalizar, "" !== undefined se leía como "cambió"
+        // aunque en realidad seguía vacío — bloqueaba con 403 cualquier
+        // Guardar sobre un ticket que nunca tuvo, por ejemplo, motivo de
+        // suspensión (la gran mayoría).
+        const normalizarTexto = (valor) => valor || "";
+
         // Clasificar (impacto/prioridad/VIP) es del calldispatcher; solo se
         // valida si el valor realmente cambia (no si llega igual al que ya
         // tenía, que es lo normal cuando quien guarda no edita ese campo).
-        const estaCambiandoTriage = (body.impacto != null && body.impacto !== ticketActual.impacto)
-            || (body.prioridad != null && body.prioridad !== ticketActual.prioridad)
-            || (body.esVip != null && body.esVip !== ticketActual.esVip);
+        const estaCambiandoTriage = (body.impacto != null && normalizarTexto(body.impacto) !== normalizarTexto(ticketActual.impacto))
+            || (body.prioridad != null && normalizarTexto(body.prioridad) !== normalizarTexto(ticketActual.prioridad))
+            || (body.esVip != null && Boolean(body.esVip) !== Boolean(ticketActual.esVip));
         if (estaCambiandoTriage && !ROLES_QUE_TRIAN.includes(req.usuario?.rol)) {
             return res.status(403).send("Solo un administrador o call dispatcher puede clasificar el ticket (impacto, prioridad o VIP).");
         }
 
         // Registrar el avance (solución/cierre, motivo de suspensión) es del
         // agente que tiene el caso asignado.
-        const estaCambiandoAvance = (body.cierre != null && body.cierre !== ticketActual.cierre)
-            || (body.motivoSuspension != null && body.motivoSuspension !== ticketActual.motivoSuspension);
+        const estaCambiandoAvance = (body.cierre != null && normalizarTexto(body.cierre) !== normalizarTexto(ticketActual.cierre))
+            || (body.motivoSuspension != null && normalizarTexto(body.motivoSuspension) !== normalizarTexto(ticketActual.motivoSuspension));
         if (estaCambiandoAvance && !ROLES_QUE_TRABAJAN_TICKET.includes(req.usuario?.rol)) {
             return res.status(403).send("Solo un administrador o el agente asignado puede registrar la solución o el motivo de suspensión.");
         }
